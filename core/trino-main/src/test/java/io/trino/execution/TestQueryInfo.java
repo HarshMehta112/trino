@@ -170,6 +170,7 @@ public class TestQueryInfo
         assertThat(queryStats.getCreateTime()).isEqualTo(basicQueryStats.getCreateTime());
         assertThat(queryStats.getEndTime()).isEqualTo(basicQueryStats.getEndTime());
         assertThat(queryStats.getQueuedTime()).isEqualTo(basicQueryStats.getQueuedTime());
+        assertThat(queryStats.getResourceWaitingTime()).isEqualTo(basicQueryStats.getResourceWaitingTime());
         assertThat(queryStats.getElapsedTime()).isEqualTo(basicQueryStats.getElapsedTime());
         assertThat(queryStats.getExecutionTime()).isEqualTo(basicQueryStats.getExecutionTime());
         assertThat(queryStats.getFailedTasks()).isEqualTo(basicQueryStats.getFailedTasks());
@@ -240,6 +241,7 @@ public class TestQueryInfo
                 null,
                 ImmutableList.of(new TrinoWarning(new WarningCode(1, "name"), "message")),
                 ImmutableSet.of(new Input(Optional.of("connectorName"), "catalog", new CatalogVersion("default"), "schema", "talble", Optional.empty(), ImmutableList.of(new Column("name", "type")), new PlanFragmentId("id"), new PlanNodeId("1"))),
+                Optional.empty(),
                 Optional.empty(),
                 ImmutableList.of(),
                 ImmutableList.of(),

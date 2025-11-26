@@ -46,6 +46,7 @@ import io.trino.operator.RetryPolicy;
 import io.trino.operator.TableFinishInfo;
 import io.trino.operator.TaskStats;
 import io.trino.server.BasicQueryInfo;
+import io.trino.server.BasicQueryStats;
 import io.trino.spi.ErrorCode;
 import io.trino.spi.QueryId;
 import io.trino.spi.eventlistener.DoubleSymmetricDistribution;
@@ -182,6 +183,7 @@ public class QueryMonitor
 
     public void queryImmediateFailureEvent(BasicQueryInfo queryInfo, ExecutionFailureInfo failure)
     {
+        BasicQueryStats queryStats = queryInfo.getQueryStats();
         eventListenerManager.queryCompleted(requiresAnonymizedPlan -> new QueryCompletedEvent(
                 new QueryMetadata(
                         queryInfo.getQueryId().toString(),
@@ -200,16 +202,16 @@ public class QueryMonitor
                 new QueryStatistics(
                         Duration.ZERO,
                         Duration.ZERO,
-                        Duration.ZERO,
-                        queryInfo.getQueryStats().getQueuedTime().toJavaTime(),
+                        queryStats.getElapsedTime().toJavaTime(),
+                        queryStats.getQueuedTime().toJavaTime(),
                         Optional.empty(),
                         Optional.empty(),
+                        Optional.of(queryStats.getResourceWaitingTime().toJavaTime()),
+                        Optional.of(queryStats.getAnalysisTime().toJavaTime()),
+                        Optional.of(queryStats.getPlanningTime().toJavaTime()),
                         Optional.empty(),
                         Optional.empty(),
-                        Optional.empty(),
-                        Optional.empty(),
-                        Optional.empty(),
-                        Optional.empty(),
+                        Optional.of(queryStats.getExecutionTime().toJavaTime()),
                         Optional.empty(),
                         Optional.empty(),
                         Optional.empty(),
@@ -250,6 +252,7 @@ public class QueryMonitor
                         queryInfo.getQueryType(),
                         queryInfo.getRetryPolicy()),
                 new QueryIOMetadata(ImmutableList.of(), Optional.empty()),
+                Optional.empty(),
                 createQueryFailureInfo(failure, Optional.empty()),
                 ImmutableList.of(),
                 queryInfo.getQueryStats().getCreateTime(),
@@ -276,6 +279,7 @@ public class QueryMonitor
                                 queryInfo.getQueryType(),
                                 queryInfo.getRetryPolicy()),
                         getQueryIOMetadata(queryInfo),
+                        queryInfo.getSelectColumnsLineageInfo(),
                         createQueryFailureInfo(queryInfo.getFailureInfo(), queryInfo.getStages()),
                         queryInfo.getWarnings(),
                         queryStats.getCreateTime(),
@@ -664,8 +668,9 @@ public class QueryMonitor
 
     private static void logQueryTimeline(BasicQueryInfo queryInfo)
     {
-        Instant queryStartTime = queryInfo.getQueryStats().getCreateTime().truncatedTo(MILLIS);
-        Instant queryEndTime = queryInfo.getQueryStats().getEndTime().truncatedTo(MILLIS);
+        BasicQueryStats queryStats = queryInfo.getQueryStats();
+        Instant queryStartTime = queryStats.getCreateTime().truncatedTo(MILLIS);
+        Instant queryEndTime = queryStats.getEndTime().truncatedTo(MILLIS);
 
         // query didn't finish cleanly
         if (queryStartTime == null || queryEndTime == null) {
@@ -680,8 +685,8 @@ public class QueryMonitor
                 queryInfo.getSession().getQueryDataEncoding(),
                 Optional.ofNullable(queryInfo.getErrorCode()),
                 elapsed,
-                elapsed,
-                0,
+                queryStats.getPlanningTime().toMillis(),
+                queryStats.getResourceWaitingTime().toMillis(),
                 0,
                 0,
                 0,

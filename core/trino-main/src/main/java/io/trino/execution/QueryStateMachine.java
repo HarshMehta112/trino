@@ -49,6 +49,7 @@ import io.trino.spi.ErrorCode;
 import io.trino.spi.QueryId;
 import io.trino.spi.TrinoException;
 import io.trino.spi.TrinoWarning;
+import io.trino.spi.eventlistener.ColumnLineageInfo;
 import io.trino.spi.eventlistener.RoutineInfo;
 import io.trino.spi.eventlistener.StageGcStatistics;
 import io.trino.spi.eventlistener.TableInfo;
@@ -111,6 +112,7 @@ import static io.trino.execution.StagesInfo.getAllStages;
 import static io.trino.operator.RetryPolicy.TASK;
 import static io.trino.server.DynamicFilterService.DynamicFiltersStats;
 import static io.trino.spi.StandardErrorCode.NOT_FOUND;
+import static io.trino.spi.StandardErrorCode.TRANSACTION_ALREADY_ABORTED;
 import static io.trino.spi.StandardErrorCode.USER_CANCELED;
 import static io.trino.spi.connector.StandardWarningCode.SPOOLING_NOT_SUPPORTED;
 import static io.trino.spi.resourcegroups.QueryType.SELECT;
@@ -182,6 +184,7 @@ public class QueryStateMachine
 
     private final AtomicReference<Set<Input>> inputs = new AtomicReference<>(ImmutableSet.of());
     private final AtomicReference<Optional<Output>> output = new AtomicReference<>(Optional.empty());
+    private final AtomicReference<Optional<List<ColumnLineageInfo>>> selectColumnsLineageInfo = new AtomicReference<>(Optional.empty());
     private final AtomicReference<List<TableInfo>> referencedTables = new AtomicReference<>(ImmutableList.of());
     private final AtomicReference<List<RoutineInfo>> routines = new AtomicReference<>(ImmutableList.of());
     private final AtomicReference<Map<String, Metrics>> catalogMetadataMetrics = new AtomicReference<>(ImmutableMap.of());
@@ -417,7 +420,9 @@ public class QueryStateMachine
             // the transaction can be committed or aborted concurrently, after the check is done.
         }
         catch (RuntimeException e) {
-            QUERY_STATE_LOG.error(e, "Error collecting query catalog metadata metrics: %s", queryId);
+            if (!(e instanceof TrinoException trinoException && TRANSACTION_ALREADY_ABORTED.toErrorCode().equals(trinoException.getErrorCode()))) {
+                QUERY_STATE_LOG.error(e, "Error collecting query catalog metadata metrics: %s", queryId);
+            }
         }
     }
 
@@ -602,6 +607,7 @@ public class QueryStateMachine
                 queryStateTimer.getCreateTime(),
                 getEndTime().orElse(null),
                 queryStateTimer.getQueuedTime(),
+                queryStateTimer.getResourceWaitingTime(),
                 queryStateTimer.getElapsedTime(),
                 queryStateTimer.getExecutionTime(),
 
@@ -693,6 +699,7 @@ public class QueryStateMachine
                 warningCollector.getWarnings(),
                 inputs.get(),
                 output.get(),
+                selectColumnsLineageInfo.get(),
                 referencedTables.get(),
                 routines.get(),
                 finalInfo,
@@ -1027,6 +1034,12 @@ public class QueryStateMachine
     {
         requireNonNull(output, "output is null");
         this.output.set(output);
+    }
+
+    public void setSelectColumnsLineageInfo(Optional<List<ColumnLineageInfo>> selectOutputColumnsLineage)
+    {
+        requireNonNull(selectOutputColumnsLineage, "selectOutputColumnsLineage is null");
+        this.selectColumnsLineageInfo.set(selectOutputColumnsLineage);
     }
 
     public void setReferencedTables(List<TableInfo> tables)
@@ -1499,6 +1512,7 @@ public class QueryStateMachine
                 queryInfo.getWarnings(),
                 queryInfo.getInputs(),
                 queryInfo.getOutput(),
+                Optional.empty(),
                 queryInfo.getReferencedTables(),
                 queryInfo.getRoutines(),
                 queryInfo.isFinalQueryInfo(),
